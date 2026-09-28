@@ -1,42 +1,30 @@
-// Package pipeline реалізує Частину 1 домашньої роботи: простий
-// послідовний конвеєр обробки даних за моделлю CSP.
-//
-// Generate виробляє випадкові числа, Filter пропускає лише парні.
-// Обидві функції використовують спрямовані типи каналів у
-// сигнатурах (Завдання 1.2) — це саме той стиль API, який ми
-// проходили на занятті.
+// Package pipeline implements a concurrent number generator and even filter.
 package pipeline
 
-// Generate запускає горутину, що генерує рівно n випадкових цілих
-// чисел у діапазоні [1, 100] і надсилає їх у повернутий канал.
-// Після надсилання n-го числа канал має бути закритий.
-//
-// TODO (Завдання 1.1, етап Generator): реалізуйте цю функцію.
-//   - запустіть горутину (go func() { ... }());
-//   - усередині горутини згенеруйте рівно n чисел через
-//     rand.Intn(100) + 1 (діапазон 1..100 включно) і надішліть
-//     кожне в out;
-//   - закрийте out через defer close(out), коли горутина завершує
-//     роботу.
+import "math/rand"
+
+// Generate sends n random numbers in [1, 100], then closes its channel.
 func Generate(n int) <-chan int {
 	out := make(chan int)
-	// TODO: ваш код тут
-	close(out)
+	go func() {
+		defer close(out)
+		for i := 0; i < n; i++ {
+			out <- rand.Intn(100) + 1
+		}
+	}()
 	return out
 }
 
-// Filter приймає числа з in і пропускає в повернутий канал лише
-// парні значення. Коли in закривається і вичерпується, Filter
-// закриває свій вихідний канал.
-//
-// TODO (Завдання 1.1, етап Filter): реалізуйте цю функцію.
-//   - запустіть горутину, що читає з in через range;
-//   - для кожного парного значення надсилайте його в out;
-//   - непарні значення просто відкидайте;
-//   - закрийте out через defer close(out), коли in вичерпано.
+// Filter forwards even numbers until in is drained, then closes its output.
 func Filter(in <-chan int) <-chan int {
 	out := make(chan int)
-	// TODO: ваш код тут
-	close(out)
+	go func() {
+		defer close(out)
+		for n := range in {
+			if n%2 == 0 {
+				out <- n
+			}
+		}
+	}()
 	return out
 }
