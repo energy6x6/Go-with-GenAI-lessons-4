@@ -5,6 +5,7 @@ package workerpool
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -28,23 +29,28 @@ type Result struct {
 // Job надається не більше timeout часу — якщо job.Fetch не встигає,
 // Result.Err міститиме помилку тайм-ауту (context.DeadlineExceeded).
 //
-// TODO (Завдання 3): реалізуйте цю функцію.
-//   - запустіть рівно numWorkers горутин (використайте sync.WaitGroup,
-//     щоб знати, коли всі вони завершили);
-//   - кожен воркер у циклі `for job := range jobs` для кожного job:
-//   - створює ctx, cancel := context.WithTimeout(context.Background(), timeout)
-//     і викликає job.Fetch(ctx);
-//   - обов'язково викликає cancel() (defer), щоб не тримати таймер;
-//   - надсилає Result{JobID: job.ID, Size: size, Err: err} у results;
-//   - у окремій горутині: після wg.Wait() закрийте results.
-//
-// Це і є той самий select + time.After / context.WithTimeout
-// патерн проти витоку горутин, який ми проходили на занятті —
-// різниця лише в тому, що тут скасування кооперативне: Fetch сам
-// перевіряє ctx.Done() (дивіться приклад slowFetch у тестах).
+// Fetch must honor ctx.Done(): cancellation is cooperative. The caller must
+// close jobs and drain results. numWorkers must be positive.
 func RunPool(jobs <-chan Job, numWorkers int, timeout time.Duration) <-chan Result {
 	results := make(chan Result)
-	// TODO: ваш код тут
-	close(results)
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				size, err := func() (int, error) {
+					ctx, cancel := context.WithTimeout(context.Background(), timeout)
+					defer cancel()
+					return job.Fetch(ctx)
+				}()
+				results <- Result{JobID: job.ID, Size: size, Err: err}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 	return results
 }
